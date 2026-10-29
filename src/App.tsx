@@ -114,8 +114,6 @@ const MENU_ITEM_CLS =
   'w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer';
 const SUBMENU_ITEM_CLS =
   'w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2 cursor-pointer';
-const QUICK_BTN_CLS =
-  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer';
 
 export default function App() {
   const [noteText, setNoteText] = useState<string>(() => {
@@ -149,13 +147,29 @@ export default function App() {
   const [statusToast, setStatusToast] = useState<string | null>(null);
 
   const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
-    x: typeof window !== 'undefined' ? Math.max(20, window.innerWidth - 360) : 600,
+    x:
+      typeof window !== 'undefined' && window.innerWidth > 420
+        ? Math.max(20, window.innerWidth - 360)
+        : 20,
     y: 28,
   }));
   const [size, setSize] = useState<{ width: number; height: number }>({
-    width: 320,
-    height: 340,
+    width: 340,
+    height: 380,
   });
+
+  // Keep note window within visible viewport when browser/preview pane resizes
+  useEffect(() => {
+    const clampToViewport = () => {
+      setPos((prev) => ({
+        x: Math.max(12, Math.min(prev.x, Math.max(12, window.innerWidth - size.width - 16))),
+        y: Math.max(12, Math.min(prev.y, Math.max(12, window.innerHeight - size.height - 16))),
+      }));
+    };
+    clampToViewport();
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, [size.width, size.height]);
 
   const dragRef = useRef<{ active: boolean; offsetX: number; offsetY: number }>({
     active: false,
@@ -176,8 +190,8 @@ export default function App() {
     edge: null,
     startX: 0,
     startY: 0,
-    startW: 320,
-    startH: 340,
+    startW: 340,
+    startH: 380,
     startPosX: 0,
     startPosY: 0,
   });
@@ -187,7 +201,6 @@ export default function App() {
     y: number;
     showFormatSub?: boolean;
   } | null>(null);
-  const [trayMenuOpen, setTrayMenuOpen] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [magicCircleKey, setMagicCircleKey] = useState<number>(0);
   const [showArchiveModal, setShowArchiveModal] = useState<boolean>(false);
@@ -357,7 +370,7 @@ export default function App() {
         saveNotes(noteText, images);
         setWritingMode(false);
         setIsVisible(false);
-        notify('Đã lưu & thu nhỏ xuống khay hệ thống');
+        notify('Đã lưu & thu nhỏ cửa sổ');
       } else if (key === 'n') {
         e.preventDefault();
         setNoteText('');
@@ -393,7 +406,6 @@ export default function App() {
     const closeMenus = () => {
       setContextMenu(null);
       setArchiveMenu(null);
-      setTrayMenuOpen(false);
     };
     window.addEventListener('click', closeMenus);
     return () => window.removeEventListener('click', closeMenus);
@@ -503,98 +515,7 @@ export default function App() {
   const lines = useMemo(() => noteText.split('\n'), [noteText]);
 
   return (
-    <div
-      className="relative w-screen h-screen overflow-hidden select-none"
-      style={{
-        background: 'radial-gradient(circle at 20% 20%, #1e2238 0%, #121526 60%, #0b0d17 100%)',
-      }}
-    >
-      {/* Desktop Header & Quick Controls */}
-      <div className="absolute top-5 left-6 flex flex-col gap-3 z-10 max-w-sm">
-        <div className="flex items-center gap-3 bg-[#2c2f48]/80 backdrop-blur-md border border-white/10 px-4 py-3 rounded-2xl shadow-lg">
-          <img
-            src={LOGO_SRC}
-            alt="Notes Stary Sea"
-            className="w-10 h-10 object-contain drop-shadow-sm shrink-0"
-          />
-          <div>
-            <h1 className="text-white font-semibold text-base leading-tight">Notes Stary Sea</h1>
-            <p className="text-[#dbe3ff]/75 text-xs">
-              Chuột phải vào ghi chú để mở Menu • Kéo ngôi sao góc trên để di chuyển
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-1.5 bg-[#2c2f48]/70 backdrop-blur-md border border-white/10 p-2 rounded-xl text-xs text-[#dbe3ff]">
-          <button
-            onClick={() => {
-              if (writingMode) {
-                saveAndExitWriting();
-              } else {
-                setWritingMode(true);
-                setTimeout(() => textareaRef.current?.focus(), 20);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
-              writingMode
-                ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
-                : 'bg-white/10 hover:bg-white/20'
-            }`}
-          >
-            {writingMode ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-            {writingMode ? 'Lưu ghi chú' : 'Viết ghi chú'}
-          </button>
-
-          <button onClick={insertCheckbox} className={QUICK_BTN_CLS} title="Ctrl + M">
-            <CheckSquare className="w-3.5 h-3.5" />
-            + Ô đánh dấu
-          </button>
-
-          <button onClick={() => fileInputRef.current?.click()} className={QUICK_BTN_CLS}>
-            <ImageIcon className="w-3.5 h-3.5" />
-            Chèn ảnh
-          </button>
-
-          <button onClick={archiveCurrentNote} className={QUICK_BTN_CLS}>
-            <Archive className="w-3.5 h-3.5" />
-            Lưu trữ
-          </button>
-
-          <button onClick={() => setShowArchiveModal(true)} className={QUICK_BTN_CLS}>
-            <Eye className="w-3.5 h-3.5" />
-            Kho lưu trữ
-          </button>
-
-          <button
-            onClick={() =>
-              setCustomStyle((prev) => ({
-                ...prev,
-                bgMode: prev.bgMode === 'translucent' ? 'solid' : 'translucent',
-              }))
-            }
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
-              customStyle.bgMode === 'translucent'
-                ? 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/40'
-                : 'bg-white/10 hover:bg-white/20'
-            }`}
-            title="Ctrl + T"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            Nền mờ
-          </button>
-
-          <button onClick={() => setShowHelpModal(true)} className={QUICK_BTN_CLS}>
-            <HelpCircle className="w-3.5 h-3.5" />
-            Phím tắt
-          </button>
-
-          <button onClick={triggerMagicCircle} className={QUICK_BTN_CLS}>
-            <Wand2 className="w-3.5 h-3.5 text-indigo-300" />
-            Hello, Etar nè
-          </button>
-        </div>
-      </div>
-
+    <div className="relative w-screen h-screen overflow-hidden select-none bg-transparent">
       <input
         ref={fileInputRef}
         type="file"
@@ -610,7 +531,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Sticky Note Widget */}
+      {/* Main Sticky Note Window (The core application window) */}
       {isVisible && (
         <div
           style={{
@@ -630,7 +551,7 @@ export default function App() {
             e.stopPropagation();
             setContextMenu({
               x: Math.min(e.clientX, window.innerWidth - 220),
-              y: Math.min(e.clientY, window.innerHeight - 360),
+              y: Math.min(e.clientY, window.innerHeight - 380),
             });
           }}
           className="absolute p-[10px] transition-shadow"
@@ -657,7 +578,7 @@ export default function App() {
                 : 'border border-white/10'
             }`}
           >
-            {/* Faded background watermark (top-right 1/4 quadrant visible at bottom-left corner) */}
+            {/* Faded background watermark */}
             {customStyle.bgMode !== 'transparent' && (
               <img
                 src={LOGO_SRC}
@@ -700,7 +621,7 @@ export default function App() {
                     color: customStyle.textColor,
                     fontFamily: customStyle.fontFamily,
                     fontSize: `${customStyle.fontSize}px`,
-                    cursor: 'url("/butchi.png") 8 8, text',
+                    cursor: 'url("./butchi.png") 8 8, text',
                   }}
                   className="w-full h-full bg-transparent resize-none focus:outline-none leading-relaxed select-text"
                 />
@@ -952,9 +873,31 @@ export default function App() {
             {startupEnabled ? 'Tắt khởi động cùng máy' : 'Khởi động cùng máy'}
           </button>
 
+          {/* 7. Phím tắt */}
+          <button
+            onClick={() => {
+              setShowHelpModal(true);
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <HelpCircle className="w-4 h-4" /> Phím tắt
+          </button>
+
+          {/* 8. Hello, Etar nè */}
+          <button
+            onClick={() => {
+              triggerMagicCircle();
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <Wand2 className="w-4 h-4 text-indigo-300" /> Hello, Etar nè
+          </button>
+
           <div className="my-1 border-t border-white/15" />
 
-          {/* 7 & 8. Hai mục của Lưu trữ */}
+          {/* 9 & 10. Hai mục của Lưu trữ */}
           <button
             onClick={() => {
               archiveCurrentNote();
@@ -976,13 +919,13 @@ export default function App() {
 
           <div className="my-1 border-t border-white/15" />
 
-          {/* 9. Thoát */}
+          {/* 11. Thoát */}
           <button
             onClick={() => {
               saveNotes(noteText, images);
               setIsVisible(false);
               setContextMenu(null);
-              notify('Đã lưu & ẩn vào khay hệ thống');
+              notify('Đã ẩn cửa sổ ghi chú');
             }}
             className="w-full text-left px-3.5 py-2 hover:bg-white/10 flex items-center justify-between text-red-300 cursor-pointer"
           >
@@ -993,79 +936,6 @@ export default function App() {
           </button>
         </div>
       )}
-
-      {/* System Tray Icon Simulation */}
-      <div className="fixed bottom-4 right-5 z-40 flex items-center gap-2">
-        {!isVisible && (
-          <button
-            onClick={() => setIsVisible(true)}
-            className="bg-[#292c45]/90 hover:bg-[#343857] text-[#b0b8d4] hover:text-white text-xs px-3 py-2 rounded-xl shadow-lg border border-white/10 cursor-pointer"
-          >
-            Hiện lại cửa sổ ghi chú
-          </button>
-        )}
-
-        <div className="relative">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setTrayMenuOpen((prev) => !prev);
-            }}
-            onDoubleClick={() => setIsVisible((prev) => !prev)}
-            title="Khay hệ thống: Nhấn để mở menu, Nhấn đúp để Ẩn/Hiện"
-            className="flex items-center gap-2 bg-[#292c45]/90 hover:bg-[#343857] border border-white/10 px-3 py-2 rounded-xl shadow-xl text-[#b0b8d4] hover:text-white text-xs cursor-pointer"
-          >
-            <img src={LOGO_SRC} alt="Khay hệ thống" className="w-5 h-5 object-contain" />
-            <span>Khay hệ thống</span>
-          </button>
-
-          {trayMenuOpen && (
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="absolute bottom-full right-0 mb-2 w-48 bg-[#292c45]/95 backdrop-blur-md border border-white/10 text-[#b0b8d4] text-sm rounded-xl shadow-2xl py-1.5"
-            >
-              <button
-                onClick={() => {
-                  setIsVisible((prev) => !prev);
-                  setTrayMenuOpen(false);
-                }}
-                className="w-full text-left px-3.5 py-2.5 hover:bg-white/10 hover:text-white cursor-pointer"
-              >
-                {isVisible ? 'Ẩn cửa sổ' : 'Hiện cửa sổ'}
-              </button>
-              <button
-                onClick={() => {
-                  setShowHelpModal(true);
-                  setTrayMenuOpen(false);
-                }}
-                className="w-full text-left px-3.5 py-2.5 hover:bg-white/10 hover:text-white cursor-pointer"
-              >
-                Phím tắt
-              </button>
-              <button
-                onClick={() => {
-                  triggerMagicCircle();
-                  setTrayMenuOpen(false);
-                }}
-                className="w-full text-left px-3.5 py-2.5 hover:bg-white/10 hover:text-white cursor-pointer"
-              >
-                Hello, Etar nè
-              </button>
-              <button
-                onClick={() => {
-                  saveNotes(noteText, images);
-                  setIsVisible(false);
-                  setTrayMenuOpen(false);
-                  notify('Đã lưu ghi chú');
-                }}
-                className="w-full text-left px-3.5 py-2.5 hover:bg-white/10 text-red-300 cursor-pointer"
-              >
-                Thoát
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Shortcuts Dialog */}
       {showHelpModal && (
@@ -1610,7 +1480,7 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: '#292c45',
-              backgroundImage: 'url("/bgss.png")',
+              backgroundImage: 'url("./bgss.png")',
               backgroundRepeat: 'no-repeat',
               backgroundSize: '200px 200px',
               backgroundPosition: 'left -100px bottom -100px',
