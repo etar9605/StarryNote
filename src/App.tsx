@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Archive,
   CheckSquare,
@@ -35,6 +35,18 @@ interface CustomStyle {
   bgColor: string;
   bgMode: 'solid' | 'translucent' | 'transparent';
 }
+
+type ResizeDirection =
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'top_left'
+  | 'top_right'
+  | 'bottom_left'
+  | 'bottom_right';
+
+const LOGO_SRC = '/assets/aistudio/logostarrysea2_20261029183244_61849baf.png';
 
 const DEFAULT_STYLE: CustomStyle = {
   fontFamily: 'sans-serif',
@@ -84,8 +96,28 @@ const STARDUST_PARTICLES = [
   { left: '90%', top: '82%', size: 4, delay: '0.3s', duration: '4.2s', opacity: 0.44 },
 ];
 
+const HEX_ANGLES = [0, 60, 120, 180, 240, 300];
+const OCT_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
+
+const RESIZE_HANDLES: { edge: ResizeDirection; className: string }[] = [
+  { edge: 'top', className: 'top-0 left-4 right-10 h-3 cursor-ns-resize' },
+  { edge: 'bottom', className: 'bottom-0 left-4 right-4 h-3 cursor-ns-resize' },
+  { edge: 'left', className: 'top-4 bottom-4 left-0 w-3 cursor-ew-resize' },
+  { edge: 'right', className: 'top-10 bottom-4 right-0 w-3 cursor-ew-resize' },
+  { edge: 'top_left', className: 'top-0 left-0 w-4 h-4 cursor-nwse-resize' },
+  { edge: 'top_right', className: 'top-0 right-0 w-4 h-4 cursor-nesw-resize' },
+  { edge: 'bottom_left', className: 'bottom-0 left-0 w-4 h-4 cursor-nesw-resize' },
+  { edge: 'bottom_right', className: 'bottom-0 right-0 w-4 h-4 cursor-nwse-resize' },
+];
+
+const MENU_ITEM_CLS =
+  'w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer';
+const SUBMENU_ITEM_CLS =
+  'w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2 cursor-pointer';
+const QUICK_BTN_CLS =
+  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer';
+
 export default function App() {
-  // Note & Archive state persisted in localStorage
   const [noteText, setNoteText] = useState<string>(() => {
     const saved = localStorage.getItem('stary_sea_note_data');
     return saved !== null ? saved : INITIAL_NOTE;
@@ -109,7 +141,6 @@ export default function App() {
     }
   });
 
-  // UI & Window State
   const [writingMode, setWritingMode] = useState<boolean>(false);
   const [pinned, setPinned] = useState<boolean>(true);
   const [isVisible, setIsVisible] = useState<boolean>(true);
@@ -117,7 +148,6 @@ export default function App() {
   const [startupEnabled, setStartupEnabled] = useState<boolean>(false);
   const [statusToast, setStatusToast] = useState<string | null>(null);
 
-  // Window geometry (starts top-right like top_right_window() in main.py)
   const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
     x: typeof window !== 'undefined' ? Math.max(20, window.innerWidth - 360) : 600,
     y: 28,
@@ -127,17 +157,6 @@ export default function App() {
     height: 340,
   });
 
-  type ResizeDirection =
-    | 'top'
-    | 'bottom'
-    | 'left'
-    | 'right'
-    | 'top_left'
-    | 'top_right'
-    | 'bottom_left'
-    | 'bottom_right';
-
-  // Dragging & Resizing refs
   const dragRef = useRef<{ active: boolean; offsetX: number; offsetY: number }>({
     active: false,
     offsetX: 0,
@@ -163,23 +182,67 @@ export default function App() {
     startPosY: 0,
   });
 
-  // Modals & Menus
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; showFormatSub?: boolean } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    showFormatSub?: boolean;
+  } | null>(null);
   const [trayMenuOpen, setTrayMenuOpen] = useState<boolean>(false);
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [magicCircleKey, setMagicCircleKey] = useState<number>(0);
   const [showArchiveModal, setShowArchiveModal] = useState<boolean>(false);
   const [showFontModal, setShowFontModal] = useState<boolean>(false);
   const [showColorModal, setShowColorModal] = useState<'text' | 'bg' | null>(null);
-  const [archiveMenu, setArchiveMenu] = useState<{ x: number; y: number; index: number } | null>(null);
+  const [archiveMenu, setArchiveMenu] = useState<{
+    x: number;
+    y: number;
+    index: number;
+  } | null>(null);
 
-  const triggerMagicCircle = () => {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const magicTimerRef = useRef<number | null>(null);
+
+  const notify = useCallback((msg: string) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setStatusToast(msg);
+    toastTimerRef.current = window.setTimeout(() => {
+      setStatusToast(null);
+      toastTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  const triggerMagicCircle = useCallback(() => {
+    if (magicTimerRef.current) window.clearTimeout(magicTimerRef.current);
     const key = Date.now();
     setMagicCircleKey(key);
-    setTimeout(() => {
-      setMagicCircleKey((prev) => (prev === key ? 0 : prev));
+    magicTimerRef.current = window.setTimeout(() => {
+      setMagicCircleKey(0);
+      magicTimerRef.current = null;
     }, 4850);
-  };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      if (magicTimerRef.current) window.clearTimeout(magicTimerRef.current);
+    };
+  }, []);
+
+  const saveNotes = useCallback(
+    (textToSave = noteText, imgsToSave = images) => {
+      localStorage.setItem('stary_sea_note_data', textToSave);
+      localStorage.setItem('stary_sea_note_images', JSON.stringify(imgsToSave));
+    },
+    [noteText, images]
+  );
+
+  const saveAndExitWriting = useCallback(() => {
+    saveNotes(noteText, images);
+    setWritingMode(false);
+    notify('Đã lưu ghi chú');
+  }, [noteText, images, saveNotes, notify]);
 
   const restoreArchiveToNote = (text: string) => {
     setNoteText(text);
@@ -190,33 +253,37 @@ export default function App() {
     notify('Đã lấy nội dung ra ghi chú');
   };
 
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const insertCheckbox = useCallback(() => {
+    if (!writingMode) {
+      setWritingMode(true);
+    }
+    const ta = textareaRef.current;
+    if (ta) {
+      const start = ta.selectionStart ?? noteText.length;
+      const end = ta.selectionEnd ?? noteText.length;
+      const next = noteText.slice(0, start) + '☐ ' + noteText.slice(end);
+      setNoteText(next);
+      setTimeout(() => {
+        ta.focus();
+        ta.setSelectionRange(start + 2, start + 2);
+      }, 10);
+    } else {
+      setNoteText((prev) => (prev ? prev + '\n☐ ' : '☐ '));
+    }
+  }, [writingMode, noteText]);
 
-  const notify = (msg: string) => {
-    setStatusToast(msg);
-    setTimeout(() => {
-      setStatusToast((prev) => (prev === msg ? null : prev));
-    }, 2000);
-  };
-
-  const saveNotes = (textToSave = noteText, imgsToSave = images) => {
-    localStorage.setItem('stary_sea_note_data', textToSave);
-    localStorage.setItem('stary_sea_note_images', JSON.stringify(imgsToSave));
-  };
-
-  const saveAndExitWriting = () => {
-    saveNotes(noteText, images);
-    setWritingMode(false);
-    notify('Đã lưu ghi chú');
-  };
-
-  // Global mouse move / up for dragging & resizing
+  // Global mouse move / up for dragging & 8-way resizing
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (dragRef.current.active) {
-        const nextX = Math.max(0, Math.min(window.innerWidth - 100, e.clientX - dragRef.current.offsetX));
-        const nextY = Math.max(0, Math.min(window.innerHeight - 80, e.clientY - dragRef.current.offsetY));
+        const nextX = Math.max(
+          0,
+          Math.min(window.innerWidth - 100, e.clientX - dragRef.current.offsetX)
+        );
+        const nextY = Math.max(
+          0,
+          Math.min(window.innerHeight - 80, e.clientY - dragRef.current.offsetY)
+        );
         setPos({ x: nextX, y: nextY });
       } else if (resizeRef.current.active && resizeRef.current.edge) {
         const { edge, startX, startY, startW, startH, startPosX, startPosY } =
@@ -275,52 +342,51 @@ export default function App() {
     };
   }, []);
 
-  // Keyboard shortcuts matching keyPressEvent in main.py
+  // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey) {
-        const key = e.key.toLowerCase();
-        if (key === 's') {
-          e.preventDefault();
-          saveNotes(noteText, images);
-          setWritingMode(false);
-          notify('Đã lưu ghi chú');
-        } else if (key === 'w') {
-          e.preventDefault();
-          saveNotes(noteText, images);
-          setWritingMode(false);
-          setIsVisible(false);
-          notify('Đã lưu & thu nhỏ xuống khay hệ thống');
-        } else if (key === 'n') {
-          e.preventDefault();
-          setNoteText('');
-          setImages([]);
-          setWritingMode(true);
-          notify('Ghi chú mới');
-        } else if (key === 'm') {
-          e.preventDefault();
-          insertCheckbox();
-        } else if (key === 't') {
-          e.preventDefault();
-          setCustomStyle((prev) => ({
-            ...prev,
-            bgMode: prev.bgMode === 'translucent' ? 'solid' : 'translucent',
-          }));
-          notify('Đã bật chế độ nền mờ');
-        } else if (key === 'r') {
-          e.preventDefault();
-          setCustomStyle((prev) => ({ ...prev, bgMode: 'transparent' }));
-          notify('Đã bật chế độ nền trong suốt');
-        } else if (key === 'y') {
-          e.preventDefault();
-          setCustomStyle(DEFAULT_STYLE);
-          notify('Khôi phục giao diện mặc định');
-        }
+      if (!e.ctrlKey && !e.metaKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 's') {
+        e.preventDefault();
+        saveNotes(noteText, images);
+        setWritingMode(false);
+        notify('Đã lưu ghi chú');
+      } else if (key === 'w') {
+        e.preventDefault();
+        saveNotes(noteText, images);
+        setWritingMode(false);
+        setIsVisible(false);
+        notify('Đã lưu & thu nhỏ xuống khay hệ thống');
+      } else if (key === 'n') {
+        e.preventDefault();
+        setNoteText('');
+        setImages([]);
+        setWritingMode(true);
+        notify('Ghi chú mới');
+      } else if (key === 'm') {
+        e.preventDefault();
+        insertCheckbox();
+      } else if (key === 't') {
+        e.preventDefault();
+        setCustomStyle((prev) => ({
+          ...prev,
+          bgMode: prev.bgMode === 'translucent' ? 'solid' : 'translucent',
+        }));
+        notify('Đã bật chế độ nền mờ');
+      } else if (key === 'r') {
+        e.preventDefault();
+        setCustomStyle((prev) => ({ ...prev, bgMode: 'transparent' }));
+        notify('Đã bật chế độ nền trong suốt');
+      } else if (key === 'y') {
+        e.preventDefault();
+        setCustomStyle(DEFAULT_STYLE);
+        notify('Khôi phục giao diện mặc định');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  });
+  }, [noteText, images, saveNotes, notify, insertCheckbox]);
 
   // Close menus on outside click
   useEffect(() => {
@@ -358,35 +424,16 @@ export default function App() {
     };
   };
 
-  const insertCheckbox = () => {
-    if (!writingMode) {
-      setWritingMode(true);
-    }
-    const ta = textareaRef.current;
-    if (ta) {
-      const start = ta.selectionStart ?? noteText.length;
-      const end = ta.selectionEnd ?? noteText.length;
-      const next = noteText.slice(0, start) + '☐ ' + noteText.slice(end);
-      setNoteText(next);
-      setTimeout(() => {
-        ta.focus();
-        ta.setSelectionRange(start + 2, start + 2);
-      }, 10);
-    } else {
-      setNoteText((prev) => (prev ? prev + '\n☐ ' : '☐ '));
-    }
-  };
-
   const toggleCheckboxOnLine = (lineIdx: number) => {
-    const lines = noteText.split('\n');
-    const line = lines[lineIdx];
+    const nextLines = noteText.split('\n');
+    const line = nextLines[lineIdx];
     if (!line) return;
     if (line.includes('☐')) {
-      lines[lineIdx] = line.replace('☐', '☑');
+      nextLines[lineIdx] = line.replace('☐', '☑');
     } else if (line.includes('☑')) {
-      lines[lineIdx] = line.replace('☑', '☐');
+      nextLines[lineIdx] = line.replace('☑', '☐');
     }
-    const updated = lines.join('\n');
+    const updated = nextLines.join('\n');
     setNoteText(updated);
     saveNotes(updated, images);
   };
@@ -453,7 +500,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  const lines = noteText.split('\n');
+  const lines = useMemo(() => noteText.split('\n'), [noteText]);
 
   return (
     <div
@@ -462,11 +509,11 @@ export default function App() {
         background: 'radial-gradient(circle at 20% 20%, #1e2238 0%, #121526 60%, #0b0d17 100%)',
       }}
     >
-      {/* Subtle Starry Sea Desktop Backdrop & Quick Controls */}
+      {/* Desktop Header & Quick Controls */}
       <div className="absolute top-5 left-6 flex flex-col gap-3 z-10 max-w-sm">
         <div className="flex items-center gap-3 bg-[#2c2f48]/80 backdrop-blur-md border border-white/10 px-4 py-3 rounded-2xl shadow-lg">
           <img
-            src="/assets/aistudio/logostarrysea2_20261029183244_61849baf.png"
+            src={LOGO_SRC}
             alt="Notes Stary Sea"
             className="w-10 h-10 object-contain drop-shadow-sm shrink-0"
           />
@@ -478,7 +525,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Helpful quick-action bar so users on touch/trackpad can also trigger actions effortlessly */}
         <div className="flex flex-wrap gap-1.5 bg-[#2c2f48]/70 backdrop-blur-md border border-white/10 p-2 rounded-xl text-xs text-[#dbe3ff]">
           <button
             onClick={() => {
@@ -496,38 +542,25 @@ export default function App() {
             }`}
           >
             {writingMode ? <Save className="w-3.5 h-3.5" /> : <Edit3 className="w-3.5 h-3.5" />}
-            {writingMode ? 'Lưu ghi chú' : 'Sửa ghi chú'}
+            {writingMode ? 'Lưu ghi chú' : 'Viết ghi chú'}
           </button>
 
-          <button
-            onClick={insertCheckbox}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-            title="Ctrl + M"
-          >
+          <button onClick={insertCheckbox} className={QUICK_BTN_CLS} title="Ctrl + M">
             <CheckSquare className="w-3.5 h-3.5" />
             + Ô đánh dấu
           </button>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-          >
+          <button onClick={() => fileInputRef.current?.click()} className={QUICK_BTN_CLS}>
             <ImageIcon className="w-3.5 h-3.5" />
             Chèn ảnh
           </button>
 
-          <button
-            onClick={archiveCurrentNote}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-          >
+          <button onClick={archiveCurrentNote} className={QUICK_BTN_CLS}>
             <Archive className="w-3.5 h-3.5" />
             Lưu trữ
           </button>
 
-          <button
-            onClick={() => setShowArchiveModal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-          >
+          <button onClick={() => setShowArchiveModal(true)} className={QUICK_BTN_CLS}>
             <Eye className="w-3.5 h-3.5" />
             Kho lưu trữ
           </button>
@@ -550,18 +583,12 @@ export default function App() {
             Nền mờ
           </button>
 
-          <button
-            onClick={() => setShowHelpModal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-          >
+          <button onClick={() => setShowHelpModal(true)} className={QUICK_BTN_CLS}>
             <HelpCircle className="w-3.5 h-3.5" />
             Phím tắt
           </button>
 
-          <button
-            onClick={triggerMagicCircle}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition cursor-pointer"
-          >
+          <button onClick={triggerMagicCircle} className={QUICK_BTN_CLS}>
             <Wand2 className="w-3.5 h-3.5 text-indigo-300" />
             Hello, Etar nè
           </button>
@@ -583,7 +610,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Sticky Note Widget (StarySeaNoteApp) */}
+      {/* Main Sticky Note Widget */}
       {isVisible && (
         <div
           style={{
@@ -594,7 +621,6 @@ export default function App() {
             zIndex: pinned ? 30 : 20,
           }}
           onMouseDown={(e) => {
-            // Allow dragging from frame background
             if (e.target === e.currentTarget) {
               startDrag(e);
             }
@@ -609,8 +635,6 @@ export default function App() {
           }}
           className="absolute p-[10px] transition-shadow"
         >
-
-          {/* self.main_widget */}
           <div
             style={{
               backgroundColor:
@@ -633,10 +657,10 @@ export default function App() {
                 : 'border border-white/10'
             }`}
           >
-            {/* Faded background logo centered at bottom-left vertex so only top-right 1/4 quadrant shows */}
+            {/* Faded background watermark (top-right 1/4 quadrant visible at bottom-left corner) */}
             {customStyle.bgMode !== 'transparent' && (
               <img
-                src="/assets/aistudio/logostarrysea2_20261029183244_61849baf.png"
+                src={LOGO_SRC}
                 alt=""
                 draggable={false}
                 className="pointer-events-none select-none absolute bottom-0 left-0 -translate-x-1/2 translate-y-1/2 w-56 h-56 object-contain opacity-[0.06] blur-[0.5px] z-0"
@@ -664,7 +688,7 @@ export default function App() {
               </span>
             </div>
 
-            {/* self.text_widget — extends flush to the right edge so scrollbar sits right on the border */}
+            {/* Note Content Area */}
             <div className="w-full flex-1 overflow-y-auto pr-[12px] relative z-10">
               {writingMode ? (
                 <textarea
@@ -698,9 +722,7 @@ export default function App() {
                           if (hasCheckbox) toggleCheckboxOnLine(idx);
                         }}
                         className={`px-1.5 py-0.5 rounded transition-colors ${
-                          hasCheckbox
-                            ? 'hover:bg-white/10 cursor-pointer'
-                            : ''
+                          hasCheckbox ? 'hover:bg-white/10 cursor-pointer' : ''
                         } ${isChecked ? 'opacity-65 line-through' : ''}`}
                       >
                         {line || '\u00A0'}
@@ -710,7 +732,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Inserted Images inside QTextEdit */}
+              {/* Inserted Images */}
               {images.length > 0 && (
                 <div className="mt-2 flex flex-col gap-2">
                   {images.map((img) => (
@@ -741,9 +763,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* self.icon_label — Top-right Starry Sea Draggable Logo Icon */}
+          {/* Top-right Starry Sea Draggable Logo Icon */}
           <img
-            src="/assets/aistudio/logostarrysea2_20261029183244_61849baf.png"
+            src={LOGO_SRC}
             alt="Kéo ghi chú"
             title="Kéo để di chuyển cửa sổ"
             onMouseDown={startDrag}
@@ -752,99 +774,24 @@ export default function App() {
           />
 
           {/* 8-Way Resize Handles (4 Edges + 4 Corners) */}
-          {/* Top Edge */}
-          <div
-            onMouseDown={(e) => startResize(e, 'top')}
-            className="absolute top-0 left-4 right-10 h-3 cursor-ns-resize z-20"
-          />
-          {/* Bottom Edge */}
-          <div
-            onMouseDown={(e) => startResize(e, 'bottom')}
-            className="absolute bottom-0 left-4 right-4 h-3 cursor-ns-resize z-20"
-          />
-          {/* Left Edge */}
-          <div
-            onMouseDown={(e) => startResize(e, 'left')}
-            className="absolute top-4 bottom-4 left-0 w-3 cursor-ew-resize z-20"
-          />
-          {/* Right Edge */}
-          <div
-            onMouseDown={(e) => startResize(e, 'right')}
-            className="absolute top-10 bottom-4 right-0 w-3 cursor-ew-resize z-20"
-          />
-          {/* Top-Left Corner */}
-          <div
-            onMouseDown={(e) => startResize(e, 'top_left')}
-            className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize z-20"
-          />
-          {/* Top-Right Corner */}
-          <div
-            onMouseDown={(e) => startResize(e, 'top_right')}
-            className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize z-20"
-          />
-          {/* Bottom-Left Corner */}
-          <div
-            onMouseDown={(e) => startResize(e, 'bottom_left')}
-            className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize z-20"
-          />
-          {/* Bottom-Right Corner */}
-          <div
-            onMouseDown={(e) => startResize(e, 'bottom_right')}
-            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20"
-          />
+          {RESIZE_HANDLES.map(({ edge, className }) => (
+            <div
+              key={edge}
+              onMouseDown={(e) => startResize(e, edge)}
+              className={`absolute z-20 ${className}`}
+            />
+          ))}
         </div>
       )}
 
-      {/* Custom Right-Click Context Menu (matches show_context_menu in main.py) */}
+      {/* Right-Click Context Menu */}
       {contextMenu && (
         <div
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
           className="fixed z-50 min-w-[210px] bg-[#292c45]/95 backdrop-blur-md border border-white/10 text-[#b0b8d4] text-sm shadow-2xl rounded-xl py-1.5"
         >
-          <button
-            onClick={() => {
-              archiveCurrentNote();
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
-          >
-            <Archive className="w-4 h-4" /> Lưu trữ ghi chú này
-          </button>
-          <button
-            onClick={() => {
-              setShowArchiveModal(true);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
-          >
-            <Eye className="w-4 h-4" /> Xem kho lưu trữ
-          </button>
-
-          <div className="my-1 border-t border-white/15" />
-
-          <button
-            onClick={() => {
-              setStartupEnabled(!startupEnabled);
-              notify(startupEnabled ? 'Đã tắt khởi động cùng hệ thống' : 'Đã bật khởi động cùng hệ thống');
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            {startupEnabled ? 'Tắt khởi động cùng máy' : 'Khởi động cùng máy'}
-          </button>
-
-          <button
-            onClick={() => {
-              setPinned(!pinned);
-              setContextMenu(null);
-            }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
-          >
-            <Pin className="w-4 h-4" /> {pinned ? 'Bỏ ghim cửa sổ' : 'Ghim cửa sổ'}
-          </button>
-
+          {/* 1. Viết ghi chú / Khóa ghi chú */}
           <button
             onClick={() => {
               const nextMode = !writingMode;
@@ -852,11 +799,12 @@ export default function App() {
               if (nextMode) setTimeout(() => textareaRef.current?.focus(), 20);
               setContextMenu(null);
             }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
+            className={MENU_ITEM_CLS}
           >
-            <Edit3 className="w-4 h-4" /> {writingMode ? 'Khóa ghi chú' : 'Sửa ghi chú'}
+            <Edit3 className="w-4 h-4" /> {writingMode ? 'Khóa ghi chú' : 'Viết ghi chú'}
           </button>
 
+          {/* 2. Lưu ghi chú */}
           <button
             onClick={() => {
               saveAndExitWriting();
@@ -870,17 +818,18 @@ export default function App() {
             <span className="text-xs opacity-70">Ctrl+S</span>
           </button>
 
+          {/* 3. Chèn hình ảnh */}
           <button
             onClick={() => {
               fileInputRef.current?.click();
               setContextMenu(null);
             }}
-            className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2.5 cursor-pointer"
+            className={MENU_ITEM_CLS}
           >
             <ImageIcon className="w-4 h-4" /> Chèn hình ảnh
           </button>
 
-          {/* Text Format Submenu */}
+          {/* 4. Định dạng văn bản (Submenu) */}
           {(() => {
             const openSubLeft =
               typeof window !== 'undefined' && contextMenu.x + 430 > window.innerWidth;
@@ -915,7 +864,7 @@ export default function App() {
                           setShowFontModal(true);
                           setContextMenu(null);
                         }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2 cursor-pointer"
+                        className={SUBMENU_ITEM_CLS}
                       >
                         <Type className="w-4 h-4" /> Phông chữ & Cỡ chữ
                       </button>
@@ -924,7 +873,7 @@ export default function App() {
                           setShowColorModal('text');
                           setContextMenu(null);
                         }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2 cursor-pointer"
+                        className={SUBMENU_ITEM_CLS}
                       >
                         <Palette className="w-4 h-4" /> Màu chữ
                       </button>
@@ -933,7 +882,7 @@ export default function App() {
                           setShowColorModal('bg');
                           setContextMenu(null);
                         }}
-                        className="w-full text-left px-3.5 py-2 hover:bg-white/10 hover:text-white flex items-center gap-2 cursor-pointer"
+                        className={SUBMENU_ITEM_CLS}
                       >
                         <Palette className="w-4 h-4" /> Màu nền
                       </button>
@@ -975,8 +924,59 @@ export default function App() {
             );
           })()}
 
+          {/* 5. Bỏ ghim cửa sổ / Ghim cửa sổ */}
+          <button
+            onClick={() => {
+              setPinned(!pinned);
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <Pin className="w-4 h-4" /> {pinned ? 'Bỏ ghim cửa sổ' : 'Ghim cửa sổ'}
+          </button>
+
+          {/* 6. Khởi động cùng máy */}
+          <button
+            onClick={() => {
+              setStartupEnabled(!startupEnabled);
+              notify(
+                startupEnabled
+                  ? 'Đã tắt khởi động cùng hệ thống'
+                  : 'Đã bật khởi động cùng hệ thống'
+              );
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <RotateCcw className="w-4 h-4" />
+            {startupEnabled ? 'Tắt khởi động cùng máy' : 'Khởi động cùng máy'}
+          </button>
+
           <div className="my-1 border-t border-white/15" />
 
+          {/* 7 & 8. Hai mục của Lưu trữ */}
+          <button
+            onClick={() => {
+              archiveCurrentNote();
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <Archive className="w-4 h-4" /> Lưu trữ ghi chú này
+          </button>
+          <button
+            onClick={() => {
+              setShowArchiveModal(true);
+              setContextMenu(null);
+            }}
+            className={MENU_ITEM_CLS}
+          >
+            <Eye className="w-4 h-4" /> Xem kho lưu trữ
+          </button>
+
+          <div className="my-1 border-t border-white/15" />
+
+          {/* 9. Thoát */}
           <button
             onClick={() => {
               saveNotes(noteText, images);
@@ -994,7 +994,7 @@ export default function App() {
         </div>
       )}
 
-      {/* System Tray Icon Simulation (bottom-right taskbar tray) */}
+      {/* System Tray Icon Simulation */}
       <div className="fixed bottom-4 right-5 z-40 flex items-center gap-2">
         {!isVisible && (
           <button
@@ -1015,11 +1015,7 @@ export default function App() {
             title="Khay hệ thống: Nhấn để mở menu, Nhấn đúp để Ẩn/Hiện"
             className="flex items-center gap-2 bg-[#292c45]/90 hover:bg-[#343857] border border-white/10 px-3 py-2 rounded-xl shadow-xl text-[#b0b8d4] hover:text-white text-xs cursor-pointer"
           >
-            <img
-              src="/assets/aistudio/logostarrysea2_20261029183244_61849baf.png"
-              alt="Khay hệ thống"
-              className="w-5 h-5 object-contain"
-            />
+            <img src={LOGO_SRC} alt="Khay hệ thống" className="w-5 h-5 object-contain" />
             <span>Khay hệ thống</span>
           </button>
 
@@ -1071,7 +1067,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Help Dialog (show_help in main.py) */}
+      {/* Shortcuts Dialog */}
       {showHelpModal && (
         <div
           onClick={() => setShowHelpModal(false)}
@@ -1150,7 +1146,6 @@ export default function App() {
 
           {/* Master Magic Circle Container */}
           <div className="animate-magic-master relative w-[480px] h-[480px] flex items-center justify-center">
-            {/* Shared SVG Filter: Crisp Multi-Layer Arcane Glow with Subtle Ancient Micro-Texture */}
             <svg width="0" height="0" className="absolute">
               <defs>
                 <filter id="arcane-bloom" x="-35%" y="-35%" width="170%" height="170%">
@@ -1181,7 +1176,6 @@ export default function App() {
                 style={{ filter: 'url(#arcane-bloom)' }}
                 className="animate-magic-cw absolute inset-0 w-full h-full drop-shadow-[0_0_14px_rgba(175,198,255,0.85)]"
               >
-                {/* Smooth continuous inner ring */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1191,7 +1185,6 @@ export default function App() {
                   strokeWidth="1.2"
                   opacity="0.8"
                 />
-                {/* Principled 6-fold uneven cadence: Long(34) - gap(6) - dot(3) - gap(6) - short(8) - gap(8) */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1205,7 +1198,7 @@ export default function App() {
                 />
               </svg>
               <img
-                src="/assets/aistudio/logostarrysea2_20261029183244_61849baf.png"
+                src={LOGO_SRC}
                 alt=""
                 className="w-26 h-26 object-contain drop-shadow-[0_0_16px_rgba(225,235,255,0.95)] drop-shadow-[0_0_34px_rgba(138,165,255,0.85)]"
               />
@@ -1218,7 +1211,6 @@ export default function App() {
                 style={{ filter: 'url(#arcane-bloom)' }}
                 className="animate-magic-ccw w-full h-full drop-shadow-[0_0_16px_rgba(165,190,255,0.9)]"
               >
-                {/* Smooth continuous outer anchor ring */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1228,7 +1220,6 @@ export default function App() {
                   strokeWidth="1.8"
                   opacity="0.95"
                 />
-                {/* Principled uneven cadence ring (6-fold harmonic pattern: Long - dot - medium - dot) */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1241,7 +1232,6 @@ export default function App() {
                   opacity="0.88"
                 />
 
-                {/* Triangle 1 — Smooth continuous sacred triangle */}
                 <polygon
                   points="200,84 300,258 100,258"
                   fill="none"
@@ -1251,7 +1241,6 @@ export default function App() {
                   opacity="0.92"
                 />
 
-                {/* Triangle 2 — Principled symmetric broken cadence on all 3 sides (Long - short - center - short - Long) */}
                 <polygon
                   points="200,316 300,142 100,142"
                   fill="none"
@@ -1263,8 +1252,7 @@ export default function App() {
                   opacity="0.95"
                 />
 
-                {/* 6 Vertex Nodes combining crescent arcs & diamond points */}
-                {[0, 60, 120, 180, 240, 300].map((angle) => (
+                {HEX_ANGLES.map((angle) => (
                   <g key={angle} transform={`rotate(${angle} 200 200)`}>
                     <path
                       d="M193 87 A 7.5 7.5 0 1 1 207 87"
@@ -1283,14 +1271,13 @@ export default function App() {
               </svg>
             </div>
 
-            {/* Stage 3 (0.82s): Octagram & Elder Runes — Smooth Square + Symmetric Segmented Square */}
+            {/* Stage 3 (0.82s): Octagram — Smooth Square + Symmetric Segmented Square */}
             <div className="animate-stage-3 absolute inset-0 flex items-center justify-center">
               <svg
                 viewBox="0 0 400 400"
                 style={{ filter: 'url(#arcane-bloom)' }}
                 className="animate-magic-cw w-full h-full drop-shadow-[0_0_18px_rgba(155,180,255,0.9)]"
               >
-                {/* Principled 8-fold uneven outer ring: Long(62) - dot(3) - medium(16) - dot(3) */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1302,7 +1289,6 @@ export default function App() {
                   strokeDasharray="62 8 3 8 16.4 8 3 11"
                   opacity="0.9"
                 />
-                {/* Smooth continuous ring anchoring the runes */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1313,7 +1299,6 @@ export default function App() {
                   opacity="0.82"
                 />
 
-                {/* Square 1 (0 deg) — Smooth continuous sacred square */}
                 <rect
                   x="78"
                   y="78"
@@ -1325,7 +1310,6 @@ export default function App() {
                   opacity="0.88"
                 />
 
-                {/* Square 2 (Rotated 45 deg) — Principled symmetric uneven cadence on each side */}
                 <rect
                   x="78"
                   y="78"
@@ -1342,7 +1326,7 @@ export default function App() {
               </svg>
             </div>
 
-            {/* Stage 4 (1.22s): Grand Celestial Rim — Combining Smooth, Regular Dashed & Principled Uneven Arcs */}
+            {/* Stage 4 (1.22s): Grand Celestial Rim */}
             <div className="animate-stage-4 absolute inset-0 flex items-center justify-center">
               <div
                 className="absolute inset-4 rounded-full blur-3xl"
@@ -1356,7 +1340,6 @@ export default function App() {
                 style={{ filter: 'url(#arcane-bloom)' }}
                 className="animate-magic-ccw w-full h-full drop-shadow-[0_0_22px_rgba(180,205,255,0.95)]"
               >
-                {/* Outer principled 8-fold rhythmic arc ring: Long(74) - dot(4) - medium(24.6) - dot(4) */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1368,7 +1351,6 @@ export default function App() {
                   strokeDasharray="74 9 4 9 24.65 9 4 14"
                   opacity="0.9"
                 />
-                {/* Main smooth continuous celestial ring */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1378,7 +1360,6 @@ export default function App() {
                   strokeWidth="2.3"
                   opacity="0.95"
                 />
-                {/* Inner fine regular dashed calibration ring */}
                 <circle
                   cx="200"
                   cy="200"
@@ -1390,8 +1371,7 @@ export default function App() {
                   opacity="0.78"
                 />
 
-                {/* 8 Symmetric Cardinal Star Points & Flanking Notches */}
-                {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
+                {OCT_ANGLES.map((angle) => (
                   <g key={angle} transform={`rotate(${angle} 200 200)`}>
                     <path
                       d="M200 7 L205.5 20 L203 22.5 L205 28 L200 39 L195 28 L197 22.5 L194.5 20 Z"
@@ -1416,7 +1396,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Archived Notes Dialog (view_archive in main.py) */}
+      {/* Archived Notes Dialog */}
       {showArchiveModal && (
         <div
           onClick={() => {
@@ -1496,7 +1476,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Archive Right-Click Context Menu (show_archive_menu in main.py) */}
+          {/* Archive Right-Click Context Menu */}
           {archiveMenu && (
             <div
               style={{ left: archiveMenu.x, top: archiveMenu.y }}
@@ -1542,7 +1522,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Font Dialog (change_font in main.py) */}
+      {/* Font Dialog */}
       {showFontModal && (
         <div
           onClick={() => setShowFontModal(false)}
@@ -1620,7 +1600,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Color Picker Dialog (change_text_color / change_bg_color in main.py) */}
+      {/* Color Picker Dialog */}
       {showColorModal && (
         <div
           onClick={() => setShowColorModal(null)}
