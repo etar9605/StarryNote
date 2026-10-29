@@ -3,11 +3,28 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "main": "electron.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "exe": "vite build && npx --yes electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.etar.notesstarysea",
+    "productName": "Notes Stary Sea",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron.cjs"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "public/icon.ico"
+    }
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.11",

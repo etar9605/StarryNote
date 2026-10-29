@@ -46,7 +46,7 @@ type ResizeDirection =
   | 'bottom_left'
   | 'bottom_right';
 
-const LOGO_SRC = '/assets/aistudio/logostarrysea2_20261029183244_61849baf.png';
+const LOGO_SRC = './assets/aistudio/logostarrysea2_20261029183244_61849baf.png';
 
 const DEFAULT_STYLE: CustomStyle = {
   fontFamily: 'sans-serif',
@@ -647,7 +647,7 @@ export default function App() {
               fontFamily: customStyle.fontFamily,
               fontSize: `${customStyle.fontSize}px`,
               borderRadius: '15px',
-              cursor: 'url("/butchi.png") 8 8, text',
+              cursor: 'url("./butchi.png") 8 8, text',
             }}
             className={`w-full h-full relative overflow-hidden shadow-2xl flex flex-col justify-center items-center py-[14px] pl-[15px] pr-0 ${
               customStyle.bgMode === 'transparent'
@@ -1077,7 +1077,7 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: '#292c45',
-              backgroundImage: 'url("/bgss.png")',
+              backgroundImage: 'url("./bgss.png")',
               backgroundRepeat: 'no-repeat',
               backgroundSize: '220px 220px',
               backgroundPosition: 'left -110px bottom -110px',
@@ -1532,7 +1532,7 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
             style={{
               backgroundColor: '#292c45',
-              backgroundImage: 'url("/bgss.png")',
+              backgroundImage: 'url("./bgss.png")',
               backgroundRepeat: 'no-repeat',
               backgroundSize: '200px 200px',
               backgroundPosition: 'left -100px bottom -100px',
