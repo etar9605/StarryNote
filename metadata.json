@@ -1,0 +1,5 @@
+{
+  "name": "Notes Stary Sea",
+  "description": "A customizable sticky notes web application migrated from PyQt6, featuring checklists, rich formatting, note archiving, and draggable widget window controls.",
+  "requestFramePermissions": []
+}
